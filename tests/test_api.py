@@ -1,35 +1,17 @@
-def test_get_full_list(client):
+def test_get_full_list(client, test_app):
     response = client.get("/home")
     test_dict = {
     "docs": [
         {
             "date": "2023-02-11 18:03:56.028704",
-            "desc": "powinno dzialac za 1szym",
-            "id": 2
+            "desc": '6565',
+            "id": 1
         },
-        {
-            "date": "2023-02-10 15:51:11.284988",
-            "desc": "musi teraz przejsc",
-            "id": 3
-        },
-        {
-            "date": "2024-02-10 15:51:11.284988",
-            "desc": "test do testow",
-            "id": 4
-        },
-        {
-            "date": "2024-02-10 15:51:11.284988",
-            "desc": "test12345",
-            "id": 5
-        },
-        {
-            "date": "2024-02-10 15:51:11.284988",
-            "desc": "test12345",
-            "id": 6
-        }
     ],
-    "total": 5
+    "total": 1
+
 }
+    print(f'{test_app.config} AAAAAAAAAAAAAAAAAAAAA')
 
     assert test_dict == response.json
 
@@ -79,4 +61,4 @@ def test_delete_wrong_item(client):
     assert response.status_code == 404
 
 
-#TODO ogarnac ta baze danych druga do testow i testy pozmieniac\
+#TODO ogarnac ta baze danych druga do testow i testy pozmieniac
