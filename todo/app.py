@@ -10,7 +10,8 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
+DB_PATH = os.environ.get("DB_PATH", 'sqlite:///' + os.path.join(basedir, 'database.db'))
+app.config['SQLALCHEMY_DATABASE_URI'] = DB_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -31,8 +32,8 @@ def get_todos() -> Response:
         date = str(i.date)
         todo_dict = {'id': i.id, 'date': date, 'desc': i.desc}
         tab.append(todo_dict)
-    return app.config['SQLALCHEMY_DATABASE_URI']
-    # return jsonify({'docs': tab, 'total': len(tab)})
+    # return app.config['SQLALCHEMY_DATABASE_URI']
+    return jsonify({'docs': tab, 'total': len(tab)})
 
 
 @app.route('/home/<int:todo_id>')
@@ -117,7 +118,6 @@ if __name__=="__main__":
     app.run(debug=True)
 
 
-
 #TODO JAK NIE BEDZIE WIADOMO CO ZROBIC TO NP DODAC CZY COS ZOSTALO WYKONANE W ZADANIU
-# opowiedziec o tym rawstringu jutro ok
+#opowiedziec o tym rawstringu jutro ok
 #nauczyc sie roznic miedzy db.create_all(), db = SQLAlchemy(app), db.init_app(app)
