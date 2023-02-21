@@ -1,18 +1,24 @@
-def test_get_full_list(client, test_app):
+from todo_flask.todo.app import Todo, db
+from datetime import datetime
+
+
+def test_get_full_list(client):
+    todo = Todo(date=datetime(year=2001, month=9, day=11), desc="abc")
+    db.session.add(todo)
+    db.session.commit()
+
     response = client.get("/home")
     test_dict = {
     "docs": [
         {
-            "date": "2023-02-11 18:03:56.028704",
-            "desc": '6565',
+            "date": "2001-09-11 00:00:00",
+            "desc": 'abc',
             "id": 1
         },
     ],
     "total": 1
 
 }
-    print(f'{test_app.config} AAAAAAAAAAAAAAAAAAAAA')
-
     assert test_dict == response.json
 
 
