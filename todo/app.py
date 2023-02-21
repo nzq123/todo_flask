@@ -12,7 +12,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy()
+db = SQLAlchemy(app)
 
 
 class Todo(db.Model):
@@ -37,7 +37,7 @@ def show_todo(todo_id: int) -> tuple[Response, int]:
     todo = Todo.query.get(todo_id)
     if not todo:
         return jsonify({"message": f"No object with '{todo_id}' id"}), 404
-    return jsonify({'id': todo.id, 'date': todo.date, 'desc': todo.desc}), 200
+    return jsonify({'id': todo.id, 'date': str(todo.date), 'desc': todo.desc}), 200
 
 
 def desc_validators(todo: str) -> list:
@@ -106,7 +106,7 @@ def delete_todo(todo_id: int) -> tuple[Response, int]:
     return jsonify({"message": "Todo was deleted", "id": todo_id}), 200
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     with app.app_context():
         db.init_app(app)
         db.create_all()

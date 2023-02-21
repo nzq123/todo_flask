@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import Iterator
-
+from datetime import datetime
 import pytest
 from flask import Flask
-from todo_flask.todo.app import app, db
+from todo.app import app, db, Todo
 
 
 BASE_TEST_DIR = Path(__file__).parent
@@ -15,10 +15,9 @@ def client():
     with app.app_context():
         db.init_app(app)
         db.create_all()
+        todo = Todo(date=datetime(year=2001, month=9, day=11), desc="abc")
+        db.session.add(todo)
+        db.session.commit()
         yield app.test_client()
         db.drop_all()
 
-
-
-#jak zaladowac dane do bazy danych przed testami
-#todo ogarnac to wyzej
