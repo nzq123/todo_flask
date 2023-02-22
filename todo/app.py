@@ -1,8 +1,12 @@
 import os
 from flask import Flask, render_template, request, url_for, redirect, jsonify, Response, Request
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.dialects.postgresql import UUID
 import json
 from datetime import datetime
+import uuid
+from flask_migrate import Migrate
+
 
 from sqlalchemy.sql import func
 
@@ -12,13 +16,60 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+db = SQLAlchemy()
+db.init_app(app)
+
+migrate = Migrate(app, db)
 
 
 class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     desc = db.Column(db.String(250), nullable=False)
+
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    login = db.Column(db.String(30), nullable=False, unique=True)
+    password = db.Column(db.String, nullable=False)
+    desc = db.Column(db.String, nullable=False)
+
+
+@app.route('/users')
+def get_users() -> Response:
+    tab = []
+    users = User.query.all()
+    for user in users:
+        user_dict = {'user_id': user.id, 'login': user.login, 'password': user.password}
+        tab.append(user_dict)
+    return jsonify({'docs': tab, 'total': len(tab)})
+
+
+@app.route('/users', methods=['POST'])
+def create():
+    login = request.json['login']
+    password = request.json['password']
+    desc = request.json['desc']
+    new_user = User(login=login, password=password, desc=desc)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({"created": True})
+
+
+@app.route('/login', methods=['POST'])
+def login_method():
+    login = request.json['login']
+    user = User.query.filter(User.login == login).first()
+    if user is None:
+        return jsonify({"login": False})
+    password = request.json['password']
+    if user.password == password:
+        out = jsonify(state=0, msg='success')
+        out.set_cookie('user_id', str(user.id))
+        return out
+    return jsonify({"login": False})
+
 
 
 @app.route('/home')
@@ -117,3 +168,11 @@ if __name__ == "__main__":
 #TODO JAK NIE BEDZIE WIADOMO CO ZROBIC TO NP DODAC CZY COS ZOSTALO WYKONANE W ZADANIU
 # opowiedziec o tym rawstringu jutro ok
 #nauczyc sie roznic miedzy db.create_all(), db = SQLAlchemy(app), db.init_app(app)
+#alembic_version trzyma obecną wersje migracji która bylą zaaplikowana na bazie
+#czym jest migracja w bazach danych
+# co to orm
+# Object Relational Mapping, dzieki temu możesz korzystać z bazy danych jak byś korzystał z obiektów
+# Odwzorowanie struktury zdefiniowanej w ORM w istniejacej bazie danych
+ #Będziesz musiał poprawić model bazodanowy. I endpoint do tworzenia.
+ # zrobic zeby na home uzytkownik widzial swoje todo czyli wpierdol sie loguje a potem ma mozliwosc dodania todo dlasiebie
+ #  Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
