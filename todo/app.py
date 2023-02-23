@@ -6,7 +6,9 @@ import json
 from datetime import datetime
 import uuid
 from flask_migrate import Migrate
-
+from sqlalchemy.orm import  relationship
+from sqlalchemy import MetaData
+from sqlalchemy import Column, ForeignKey, Integer, Table
 
 from sqlalchemy.sql import func
 
@@ -16,16 +18,23 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'database.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy()
+
+#https://stackoverflow.com/questions/45527323/flask-sqlalchemy-upgrade-failing-after-updating-models-need-an-explanation-on-h
+naming_convention = {
+    "ix": 'ix_%(column_0_label)s',
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(column_0_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
+db = SQLAlchemy(metadata=MetaData(naming_convention=naming_convention))
 db.init_app(app)
 
+
 migrate = Migrate(app, db)
+migrate.init_app(app, db, render_as_batch=True)
 
-
-class Todo(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.DateTime, nullable=False)
-    desc = db.Column(db.String(250), nullable=False)
+#
 
 
 class User(db.Model):
@@ -33,7 +42,20 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     login = db.Column(db.String(30), nullable=False, unique=True)
     password = db.Column(db.String, nullable=False)
-    desc = db.Column(db.String, nullable=False)
+    todos = db.relationship("Todo")
+
+
+class Todo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.DateTime, nullable=False)
+    desc = db.Column(db.String(250), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+
+@app.route('/getcookie')
+def getcookie():
+    name = request.cookies.get('user_id')
+    return 'welcome ' + name
 
 
 @app.route('/users')
@@ -50,8 +72,7 @@ def get_users() -> Response:
 def create():
     login = request.json['login']
     password = request.json['password']
-    desc = request.json['desc']
-    new_user = User(login=login, password=password, desc=desc)
+    new_user = User(login=login, password=password)
     db.session.add(new_user)
     db.session.commit()
     return jsonify({"created": True})
@@ -71,15 +92,23 @@ def login_method():
     return jsonify({"login": False})
 
 
+@app.route('/logout', methods=['POST'])
+def logout_method():
+    out = jsonify(state=0, msg='success')
+    out.delete_cookie('user_id')
+    return out
+
 
 @app.route('/home')
 def get_todos() -> Response:
     tab = []
     todos = Todo.query.all()
+    user_id = request.cookies.get('user_id')
     for i in todos:
-        date = str(i.date)
-        todo_dict = {'id': i.id, 'date': date, 'desc': i.desc}
-        tab.append(todo_dict)
+        if str(i.user_id) == user_id:
+            date = str(i.date)
+            todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id}
+            tab.append(todo_dict)
     return jsonify({'docs': tab, 'total': len(tab)})
 
 
@@ -105,6 +134,7 @@ def desc_validators(todo: str) -> list:
 
 @app.route('/home', methods=['POST'])
 def create_todo() -> tuple[Response, int]:
+    user_id = request.cookies.get('user_id')
     try:
         date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
     except ValueError:
@@ -117,7 +147,7 @@ def create_todo() -> tuple[Response, int]:
         return jsonify({"message": "'desc' field is required"}), 400
     tab = desc_validators(desc)
     if len(tab) == 0:
-        new_todo = Todo(date=date, desc=desc)
+        new_todo = Todo(date=date, desc=desc, user_id=user_id)
         db.session.add(new_todo)
         db.session.commit()
         return jsonify({'message': 'New todo  was added ', 'id': new_todo.id}), 200
@@ -175,4 +205,5 @@ if __name__ == "__main__":
 # Odwzorowanie struktury zdefiniowanej w ORM w istniejacej bazie danych
  #Będziesz musiał poprawić model bazodanowy. I endpoint do tworzenia.
  # zrobic zeby na home uzytkownik widzial swoje todo czyli wpierdol sie loguje a potem ma mozliwosc dodania todo dlasiebie
- #  Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
+ # Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
+ # update swojego todo zmienic
