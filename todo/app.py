@@ -157,11 +157,18 @@ def create_todo() -> tuple[Response, int]:
 
 @app.route('/home/<int:todo_id>', methods=['PUT'])
 def update_todo(todo_id: int) -> tuple[Response, int]:
-    upd_todo = Todo.query.get(todo_id)
-    if not upd_todo:
+    user_id = request.cookies.get('user_id')
+    my_todo = Todo.query.get(todo_id)
+    try:
+        userid = int(user_id)
+    except TypeError:
+        return jsonify({"message": "TypeError "}), 401
+    if my_todo.user_id != userid:
+        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
+    if not my_todo:
         return jsonify({"message": f"No object with '{todo_id}' id"}), 404
     try:
-        upd_todo.date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
+        my_todo.date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
     except ValueError:
         return jsonify({'message': 'Value Error '}), 400
     try:
@@ -170,7 +177,7 @@ def update_todo(todo_id: int) -> tuple[Response, int]:
         return jsonify({"message": "'desc' field is required"}), 400
     tab = desc_validators(put_todo)
     if len(tab) == 0:
-        upd_todo.desc = put_todo
+        my_todo.desc = put_todo
         db.session.commit()
         return jsonify({"message": "Todo was updated", "id": todo_id}), 200
     else:
@@ -179,7 +186,14 @@ def update_todo(todo_id: int) -> tuple[Response, int]:
 
 @app.route('/home/<int:todo_id>', methods=['DELETE'])
 def delete_todo(todo_id: int) -> tuple[Response, int]:
+    user_id = request.cookies.get('user_id')
     del_todo = Todo.query.get(todo_id)
+    try:
+        userid = int(user_id)
+    except TypeError:
+        return jsonify({"message": "TypeError "}), 401
+    if del_todo.user_id != userid:
+        return jsonify({"message": f"You are not allowed to delete this todo"}), 404
     if del_todo is None:
         return jsonify({'message': 'Error'}), 404
     db.session.delete(del_todo)
@@ -195,15 +209,16 @@ if __name__ == "__main__":
 
 
 
-#TODO JAK NIE BEDZIE WIADOMO CO ZROBIC TO NP DODAC CZY COS ZOSTALO WYKONANE W ZADANIU
+# TODO JAK NIE BEDZIE WIADOMO CO ZROBIC TO NP DODAC CZY COS ZOSTALO WYKONANE W ZADANIU
 # opowiedziec o tym rawstringu jutro ok
-#nauczyc sie roznic miedzy db.create_all(), db = SQLAlchemy(app), db.init_app(app)
-#alembic_version trzyma obecną wersje migracji która bylą zaaplikowana na bazie
-#czym jest migracja w bazach danych
+# nauczyc sie roznic miedzy db.create_all(), db = SQLAlchemy(app), db.init_app(app)
+# alembic_version trzyma obecną wersje migracji która bylą zaaplikowana na bazie
+# czym jest migracja w bazach danych
 # co to orm
 # Object Relational Mapping, dzieki temu możesz korzystać z bazy danych jak byś korzystał z obiektów
 # Odwzorowanie struktury zdefiniowanej w ORM w istniejacej bazie danych
- #Będziesz musiał poprawić model bazodanowy. I endpoint do tworzenia.
- # zrobic zeby na home uzytkownik widzial swoje todo czyli wpierdol sie loguje a potem ma mozliwosc dodania todo dlasiebie
- # Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
- # update swojego todo zmienic
+# Będziesz musiał poprawić model bazodanowy. I endpoint do tworzenia.
+# zrobic zeby na home uzytkownik widzial swoje todo czyli wpierw sie loguje a potem ma mozliwosc dodania todo dlasiebie
+# Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
+# update swojego todo zmienic
+# document.cookie = "user_id=cyferka"
