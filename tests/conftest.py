@@ -1,8 +1,6 @@
 from pathlib import Path
-from typing import Iterator
 from datetime import datetime
 import pytest
-from flask import Flask
 from todo.app import app, db, Todo
 
 

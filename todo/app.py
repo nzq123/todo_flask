@@ -1,16 +1,12 @@
 import os
-from flask import Flask, render_template, request, url_for, redirect, jsonify, Response, Request
+from flask import Flask, request, jsonify, Response, abort
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.dialects.postgresql import UUID
-import json
 from datetime import datetime
-import uuid
 from flask_migrate import Migrate
-from sqlalchemy.orm import  relationship
 from sqlalchemy import MetaData
-from sqlalchemy import Column, ForeignKey, Integer, Table
+import enum
+from functools import wraps
 
-from sqlalchemy.sql import func
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -34,7 +30,11 @@ db.init_app(app)
 migrate = Migrate(app, db)
 migrate.init_app(app, db, render_as_batch=True)
 
-#
+
+class TaskStatus(enum.Enum):
+    TO_DO = 'to_do'
+    IN_PROGRESS = 'in_progress'
+    DONE = 'done'
 
 
 class User(db.Model):
@@ -49,11 +49,37 @@ class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     desc = db.Column(db.String(250), nullable=False)
+    status = db.Column(db.Enum(TaskStatus), nullable=True, default=TaskStatus.TO_DO)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
 
-@app.route('/getcookie')
-def getcookie():
+def require_user_id(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        user_id = request.cookies.get('user_id')
+        if not user_id:
+            abort(403)
+        user = User.query.filter(User.id == user_id).first()
+        if not user:
+            abort(403)
+        return func(*args, **kwargs, user_id=user_id)
+    return wrapper
+
+
+def desc_validators(todo: str) -> list:
+    tab = []
+    if todo is None:
+        tab.append({"message": "'desc' field cannot be Null"})
+        return tab
+    if not isinstance(todo, str):
+        tab.append({"message": "'desc' field has to be string"})
+    if len(str(todo)) <= 3:
+        tab.append({"message": "'desc' field require minimum 4 characters"})
+    return tab
+
+
+@app.route('/get_cookie')
+def get_cookie():
     name = request.cookies.get('user_id')
     return 'welcome ' + name
 
@@ -99,16 +125,15 @@ def logout_method():
     return out
 
 
-@app.route('/home')
-def get_todos() -> Response:
+@app.route('/todos')
+@require_user_id
+def get_todos(user_id) -> Response:
     tab = []
-    todos = Todo.query.all()
-    user_id = request.cookies.get('user_id')
+    todos = Todo.query.filter_by(user_id=user_id).all()
     for i in todos:
-        if str(i.user_id) == user_id:
-            date = str(i.date)
-            todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id}
-            tab.append(todo_dict)
+        date = str(i.date)
+        todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id, 'status': i.status.value}
+        tab.append(todo_dict)
     return jsonify({'docs': tab, 'total': len(tab)})
 
 
@@ -120,21 +145,9 @@ def show_todo(todo_id: int) -> tuple[Response, int]:
     return jsonify({'id': todo.id, 'date': str(todo.date), 'desc': todo.desc}), 200
 
 
-def desc_validators(todo: str) -> list:
-    tab = []
-    if todo is None:
-        tab.append({"message": "'desc' field cannot be Null"})
-        return tab
-    if not isinstance(todo, str):
-        tab.append({"message": "'desc' field has to be string"})
-    if len(str(todo)) <= 3:
-        tab.append({"message": "'desc' field require minimum 4 characters"})
-    return tab
-
-
 @app.route('/home', methods=['POST'])
-def create_todo() -> tuple[Response, int]:
-    user_id = request.cookies.get('user_id')
+@require_user_id
+def create_todo(user_id) -> tuple[Response, int]:
     try:
         date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
     except ValueError:
@@ -147,7 +160,7 @@ def create_todo() -> tuple[Response, int]:
         return jsonify({"message": "'desc' field is required"}), 400
     tab = desc_validators(desc)
     if len(tab) == 0:
-        new_todo = Todo(date=date, desc=desc, user_id=user_id)
+        new_todo = Todo(date=date, desc=desc, user_id=user_id, status=TaskStatus.TO_DO)
         db.session.add(new_todo)
         db.session.commit()
         return jsonify({'message': 'New todo  was added ', 'id': new_todo.id}), 200
@@ -156,8 +169,8 @@ def create_todo() -> tuple[Response, int]:
 
 
 @app.route('/home/<int:todo_id>', methods=['PUT'])
-def update_todo(todo_id: int) -> tuple[Response, int]:
-    user_id = request.cookies.get('user_id')
+@require_user_id
+def update_todo(todo_id: int, user_id) -> tuple[Response, int]:
     my_todo = Todo.query.get(todo_id)
     try:
         userid = int(user_id)
@@ -169,36 +182,34 @@ def update_todo(todo_id: int) -> tuple[Response, int]:
         return jsonify({"message": f"No object with '{todo_id}' id"}), 404
     try:
         my_todo.date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
+        put_todo = request.json['desc']
+        new_status_todo = request.json['status']
+        new_status = TaskStatus[new_status_todo]
+    except KeyError:
+        return jsonify({"message": "KeyError"}), 400
     except ValueError:
         return jsonify({'message': 'Value Error '}), 400
-    try:
-        put_todo = request.json['desc']
-    except KeyError:
-        return jsonify({"message": "'desc' field is required"}), 400
-    tab = desc_validators(put_todo)
-    if len(tab) == 0:
+    error_list = desc_validators(put_todo)
+    if len(error_list) == 0:
         my_todo.desc = put_todo
+        my_todo.status = new_status
         db.session.commit()
         return jsonify({"message": "Todo was updated", "id": todo_id}), 200
     else:
-        return jsonify(tab), 400
+        return jsonify(error_list), 400
 
 
 @app.route('/home/<int:todo_id>', methods=['DELETE'])
-def delete_todo(todo_id: int) -> tuple[Response, int]:
-    user_id = request.cookies.get('user_id')
+@require_user_id
+def delete_todo(todo_id: int, user_id) -> tuple[Response, int]:
     del_todo = Todo.query.get(todo_id)
-    try:
-        userid = int(user_id)
-    except TypeError:
-        return jsonify({"message": "TypeError "}), 401
-    if del_todo.user_id != userid:
-        return jsonify({"message": f"You are not allowed to delete this todo"}), 404
     if del_todo is None:
-        return jsonify({'message': 'Error'}), 404
+        return jsonify({'message': 'Error'}), 204
+    if del_todo.user_id != user_id:
+        return jsonify({"message": f"You are not allowed to delete this todo"}), 404
     db.session.delete(del_todo)
     db.session.commit()
-    return jsonify({"message": "Todo was deleted", "id": todo_id}), 200
+    return jsonify({"message": "Todo was deleted", "id": todo_id}), 204
 
 
 if __name__ == "__main__":
@@ -214,11 +225,8 @@ if __name__ == "__main__":
 # nauczyc sie roznic miedzy db.create_all(), db = SQLAlchemy(app), db.init_app(app)
 # alembic_version trzyma obecną wersje migracji która bylą zaaplikowana na bazie
 # czym jest migracja w bazach danych
-# co to orm
 # Object Relational Mapping, dzieki temu możesz korzystać z bazy danych jak byś korzystał z obiektów
 # Odwzorowanie struktury zdefiniowanej w ORM w istniejacej bazie danych
-# Będziesz musiał poprawić model bazodanowy. I endpoint do tworzenia.
-# zrobic zeby na home uzytkownik widzial swoje todo czyli wpierw sie loguje a potem ma mozliwosc dodania todo dlasiebie
-# Musisz do modelu Todo dodać relację do usera i poprawić endpoint tworzenia todo, żeby czytał usera z ciastka.
-# update swojego todo zmienic
 # document.cookie = "user_id=cyferka"
+# zaznaczanie done
+# listowanie todo

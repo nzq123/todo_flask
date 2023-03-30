@@ -1,7 +1,3 @@
-from todo.app import Todo, db
-from datetime import datetime
-
-
 def test_get_full_list(client):
     response = client.get("/home")
     test_dict = {

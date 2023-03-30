@@ -14,7 +14,6 @@ config = context.config
 fileConfig(config.config_file_name)
 logger = logging.getLogger('alembic.env')
 
-render_as_batch = True
 
 def get_engine():
     try:
