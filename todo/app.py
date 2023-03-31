@@ -3,8 +3,7 @@ from flask import Flask, request, jsonify, Response, abort
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from flask_migrate import Migrate
-from sqlalchemy import MetaData, not_, or_
-import enum
+from sqlalchemy import MetaData
 from functools import wraps
 
 
@@ -49,9 +48,6 @@ class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     desc = db.Column(db.String(250), nullable=False)
-    opis = db.Column(db.String(250), nullable=False, server_default="opis", default="opis")
-    opis2 = db.Column(db.String(250), nullable=False, server_default="opis", default="opis")
-    opis3 = db.Column(db.String(250), nullable=False, server_default="opis3", default="opis3")
     status = db.Column(db.Enum(TaskStatus), nullable=True, default=TaskStatus.TO_DO)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
@@ -65,7 +61,7 @@ def require_user_id(func):
         user = User.query.filter(User.id == user_id).first()
         if not user:
             abort(403)
-        return func(*args, **kwargs, user_id=user_id)
+        return func(*args, **kwargs, user_id=int(user_id))
     return wrapper
 
 
@@ -145,18 +141,16 @@ def create_todo(user_id: int) -> tuple[Response, int]:
         return jsonify({'message': 'Invalid date format'}), 400
     except KeyError:
         return jsonify({"message": "'date' field is required"}), 400
-    try:
-        desc = request.json['desc']
-    except KeyError:
+    desc = request.json.get('desc')
+    if not desc:
         return jsonify({"message": "'desc' field is required"}), 400
-    tab = desc_validators(desc)
-    if len(tab) == 0:
-        new_todo = Todo(date=date, desc=desc, user_id=user_id, status=TaskStatus.TO_DO)
-        db.session.add(new_todo)
-        db.session.commit()
-        return jsonify({'message': 'New todo  was added ', 'id': new_todo.id}), 200
-    else:
-        return jsonify(tab), 400
+    errors = desc_validators(desc)
+    if errors:
+        return jsonify(errors), 400
+    new_todo = Todo(date=date, desc=desc, user_id=user_id, status=TaskStatus.TO_DO)
+    db.session.add(new_todo)
+    db.session.commit()
+    return jsonify({'message': 'New todo  was added ', 'id': new_todo.id}), 200
 
 
 @app.route('/todos/<int:todo_id>', methods=['PUT'])
@@ -205,42 +199,32 @@ def delete_todo(todo_id: int, user_id: int) -> tuple[Response, int]:
 
 @app.route('/todos/<int:todo_id>/complete', methods=['PUT'])
 @require_user_id
-def todo_done_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
-    complete_todo = Todo.query.get(todo_id)
-    try:
-        userid = int(user_id)
-    except TypeError:
-        return jsonify({"message": "TypeError "}), 401
-    if complete_todo.user_id != userid:
-        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
-    if not complete_todo:
+def complete_todo_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
+    todo = Todo.query.get(todo_id)
+    if not todo:
         return jsonify({"message": f"No object with '{todo_id}' id"}), 404
-    if complete_todo.status != TaskStatus.DONE:
-        complete_todo.status = TaskStatus.DONE
-        db.session.commit()
-        return jsonify({"message": "Todo was completed", "id": todo_id}), 200
-    else:
+    if todo.user_id != int(user_id):
+        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
+    if todo.status == TaskStatus.DONE:
         return jsonify({"message": f"This todo was already done"}), 400
+    todo.status = TaskStatus.DONE
+    db.session.commit()
+    return jsonify({"message": "Todo was completed", "id": todo_id}), 200
 
 
 @app.route('/todos/<int:todo_id>/in_progress', methods=['PUT'])
 @require_user_id
-def todo_progress_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
-    progress_todo = Todo.query.get(todo_id)
-    try:
-        userid = int(user_id)
-    except TypeError:
-        return jsonify({"message": "TypeError "}), 401
-    if progress_todo.user_id != userid:
-        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
-    if not progress_todo:
+def progress_todo_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
+    todo = Todo.query.get(todo_id)
+    if not todo:
         return jsonify({"message": f"No object with '{todo_id}' id"}), 404
-    if progress_todo.status == TaskStatus.TO_DO:
-        progress_todo.status = TaskStatus.IN_PROGRESS
-        db.session.commit()
-        return jsonify({"message": "Todo was updated", "id": todo_id}), 200
-    else:
+    if todo.user_id != user_id:
+        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
+    if todo.status != TaskStatus.TO_DO:
         return jsonify({"message": f"This todo was already in progress or done"}), 400
+    todo.status = TaskStatus.IN_PROGRESS
+    db.session.commit()
+    return jsonify({"message": "Todo was updated", "id": todo_id}), 200
 
 
 @app.route('/todos', methods=['GET'])
@@ -261,8 +245,7 @@ def get_todo_todos(user_id: int) -> Response:
                 pass
         todos = Todo.query.filter_by(user_id=user_id).filter(Todo.status.in_(todo_status)).all()
     for i in todos:
-        date = str(i.date)
-        todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id, 'status': i.status.value}
+        todo_dict = {'id': i.id, 'date': str(i.date), 'desc': i.desc, 'user_id': i.user_id, 'status': i.status.value}
         tab.append(todo_dict)
     return jsonify({'docs': tab, 'total': len(tab)})
 
@@ -283,5 +266,3 @@ if __name__ == "__main__":
 # Object Relational Mapping, dzieki temu możesz korzystać z bazy danych jak byś korzystał z obiektów
 # Odwzorowanie struktury zdefiniowanej w ORM w istniejacej bazie danych
 # document.cookie = "user_id=cyferka"
-# zaznaczanie done
-# listowanie todo
