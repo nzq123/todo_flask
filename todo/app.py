@@ -3,7 +3,7 @@ from flask import Flask, request, jsonify, Response, abort
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 from flask_migrate import Migrate
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, not_, or_
 import enum
 from functools import wraps
 
@@ -49,6 +49,9 @@ class Todo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.DateTime, nullable=False)
     desc = db.Column(db.String(250), nullable=False)
+    opis = db.Column(db.String(250), nullable=False, server_default="opis", default="opis")
+    opis2 = db.Column(db.String(250), nullable=False, server_default="opis", default="opis")
+    opis3 = db.Column(db.String(250), nullable=False, server_default="opis3", default="opis3")
     status = db.Column(db.Enum(TaskStatus), nullable=True, default=TaskStatus.TO_DO)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
 
@@ -125,18 +128,6 @@ def logout_method():
     return out
 
 
-@app.route('/todos')
-@require_user_id
-def get_todos(user_id) -> Response:
-    tab = []
-    todos = Todo.query.filter_by(user_id=user_id).all()
-    for i in todos:
-        date = str(i.date)
-        todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id, 'status': i.status.value}
-        tab.append(todo_dict)
-    return jsonify({'docs': tab, 'total': len(tab)})
-
-
 @app.route('/home/<int:todo_id>')
 def show_todo(todo_id: int) -> tuple[Response, int]:
     todo = Todo.query.get(todo_id)
@@ -145,9 +136,9 @@ def show_todo(todo_id: int) -> tuple[Response, int]:
     return jsonify({'id': todo.id, 'date': str(todo.date), 'desc': todo.desc}), 200
 
 
-@app.route('/home', methods=['POST'])
+@app.route('/todos', methods=['POST'])
 @require_user_id
-def create_todo(user_id) -> tuple[Response, int]:
+def create_todo(user_id: int) -> tuple[Response, int]:
     try:
         date = datetime.strptime(request.json['date'], '%Y-%m-%d %H:%M:%S.%f')
     except ValueError:
@@ -168,9 +159,9 @@ def create_todo(user_id) -> tuple[Response, int]:
         return jsonify(tab), 400
 
 
-@app.route('/home/<int:todo_id>', methods=['PUT'])
+@app.route('/todos/<int:todo_id>', methods=['PUT'])
 @require_user_id
-def update_todo(todo_id: int, user_id) -> tuple[Response, int]:
+def update_todo(todo_id: int, user_id: int) -> tuple[Response, int]:
     my_todo = Todo.query.get(todo_id)
     try:
         userid = int(user_id)
@@ -199,9 +190,9 @@ def update_todo(todo_id: int, user_id) -> tuple[Response, int]:
         return jsonify(error_list), 400
 
 
-@app.route('/home/<int:todo_id>', methods=['DELETE'])
+@app.route('/todos/<int:todo_id>', methods=['DELETE'])
 @require_user_id
-def delete_todo(todo_id: int, user_id) -> tuple[Response, int]:
+def delete_todo(todo_id: int, user_id: int) -> tuple[Response, int]:
     del_todo = Todo.query.get(todo_id)
     if del_todo is None:
         return jsonify({'message': 'Error'}), 204
@@ -210,6 +201,70 @@ def delete_todo(todo_id: int, user_id) -> tuple[Response, int]:
     db.session.delete(del_todo)
     db.session.commit()
     return jsonify({"message": "Todo was deleted", "id": todo_id}), 204
+
+
+@app.route('/todos/<int:todo_id>/complete', methods=['PUT'])
+@require_user_id
+def todo_done_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
+    complete_todo = Todo.query.get(todo_id)
+    try:
+        userid = int(user_id)
+    except TypeError:
+        return jsonify({"message": "TypeError "}), 401
+    if complete_todo.user_id != userid:
+        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
+    if not complete_todo:
+        return jsonify({"message": f"No object with '{todo_id}' id"}), 404
+    if complete_todo.status != TaskStatus.DONE:
+        complete_todo.status = TaskStatus.DONE
+        db.session.commit()
+        return jsonify({"message": "Todo was completed", "id": todo_id}), 200
+    else:
+        return jsonify({"message": f"This todo was already done"}), 400
+
+
+@app.route('/todos/<int:todo_id>/in_progress', methods=['PUT'])
+@require_user_id
+def todo_progress_by_id(todo_id: int, user_id: int) -> tuple[Response, int]:
+    progress_todo = Todo.query.get(todo_id)
+    try:
+        userid = int(user_id)
+    except TypeError:
+        return jsonify({"message": "TypeError "}), 401
+    if progress_todo.user_id != userid:
+        return jsonify({"message": f"You are not allowed to edit this todo"}), 404
+    if not progress_todo:
+        return jsonify({"message": f"No object with '{todo_id}' id"}), 404
+    if progress_todo.status == TaskStatus.TO_DO:
+        progress_todo.status = TaskStatus.IN_PROGRESS
+        db.session.commit()
+        return jsonify({"message": "Todo was updated", "id": todo_id}), 200
+    else:
+        return jsonify({"message": f"This todo was already in progress or done"}), 400
+
+
+@app.route('/todos', methods=['GET'])
+@require_user_id
+def get_todo_todos(user_id: int) -> Response:
+    args = request.args
+    status = args.get('status', "")
+    tab = []
+    if not status:
+        todos = Todo.query.filter_by(user_id=user_id).all()
+    else:
+        new_status = status.split(",")
+        todo_status = []
+        for i in new_status:
+            try:
+                todo_status.append(TaskStatus[i.upper()])
+            except KeyError:
+                pass
+        todos = Todo.query.filter_by(user_id=user_id).filter(Todo.status.in_(todo_status)).all()
+    for i in todos:
+        date = str(i.date)
+        todo_dict = {'id': i.id, 'date': date, 'desc': i.desc, 'user_id': i.user_id, 'status': i.status.value}
+        tab.append(todo_dict)
+    return jsonify({'docs': tab, 'total': len(tab)})
 
 
 if __name__ == "__main__":
